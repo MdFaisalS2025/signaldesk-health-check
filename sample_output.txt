@@ -1,0 +1,64 @@
+SignalDesk Weekly Health Check
+Source rows: 41  |  clean: 35  |  flagged/excluded: 5  |  ledger entries: 6
+
+========================================================================
+1) WHAT'S WORKING RIGHT NOW
+========================================================================
+workflow               sessions  accept%   flag%  min/sess   total min saved
+Reply draft                 480    63.1%   11.9%      4.0             1927.0
+Lead summary                389    60.2%    7.5%      7.8             3029.0
+Feedback clustering         164    45.1%   12.8%     13.0             2127.0
+
+No single workflow wins on every metric, so 'most useful' depends on what you
+optimize for:
+  - Reply draft leads on volume and acceptance rate -> most-adopted workflow.
+  - Lead summary leads on lowest flag rate and total minutes saved -> most
+    trustworthy at scale.
+  - Feedback clustering saves the most time per session but has the lowest
+    acceptance rate -> useful but least reliable output.
+(Excludes rows quarantined in section 2 and any day flagged incomplete.)
+
+========================================================================
+2) WHAT LOOKS SUSPICIOUS
+========================================================================
+Quarantine ledger (6 rows touched):
+  [DROP                ] 2026-08-05  Sales   Lead summary        email        - duplicate export row (same date/team/workflow/source)
+  [EXCLUDE FROM TOTALS ] 2026-08-05  Sales   Lead summary        email        - flagged as demo-account traffic, not real usage
+  [EXCLUDE FROM TOTALS ] 2026-08-07  Sales   Lead summary        email        - partial export day (fewer series present than the modal 6/day)
+  [EXCLUDE FROM TOTALS ] 2026-08-07  Support Reply draft         queue        - partial export day (fewer series present than the modal 6/day)
+  [EXCLUDE FROM TOTALS ] 2026-08-07  Product Feedback clustering csv upload   - partial export day (fewer series present than the modal 6/day)
+  [EXCLUDE FROM TOTALS ] 2026-08-07  Product Feedback clustering manual       - partial export day (fewer series present than the modal 6/day)
+
+Dirty-value repairs made while parsing (3 cells):
+  [REPAIRED            ] 2026-08-01  Support Reply draft         manual       - user_rating is blank -> treated as missing
+  [REPAIRED            ] 2026-08-02  Product Feedback clustering manual       - team casing normalized: 'product' -> 'Product'
+  [REPAIRED            ] 2026-08-05  Product Feedback clustering manual       - median_confidence='n/a' is not numeric -> treated as missing
+  These rows are still counted above (only the bad cell was nulled, not the
+  row) -- worth checking if the source pipeline should reject them instead.
+
+Divergence alarm (model confidence up, human signal down):
+  Support/Reply draft/queue: 2026-08-06 -> 2026-08-07
+    confidence 0.88 -> 0.91  (UP)
+    rating     4.1  -> 2.1   (DOWN)
+    flag rate  13.3%  -> 40.0%  (spike)
+    note: "review policy changed mid-day"
+    week shape  confidence .:-++*@   rating %@%@@@.   (2026-08-01 .. 2026-08-07, last bar = incident day)
+
+Metric trust ranking (evidence, not opinion):
+  median_confidence vs user_rating, whole dataset:      rho = +0.74
+  same pair, WITHIN the flagged Reply draft/queue series: rho = +0.11
+  -> Confidence tracks human judgment fine in steady state, but that
+     relationship breaks down exactly during the incident above -- the one
+     moment you'd actually want an early warning. Trust it least when you
+     need it most. Treat completed/accepted_output as the primary signal
+     and confidence as a lagging, not leading, indicator.
+
+========================================================================
+3) WHAT TO LOOK AT NEXT
+========================================================================
+  1. Support / Reply draft / queue, 2026-08-07: acceptance and rating cratered same day flag rate tripled and confidence hit its 7-day high. Note says 'review policy changed mid-day' -- confirm whether the policy change itself (more/stricter human review) or an underlying quality regression caused the drop; the data alone can't separate them.
+
+  2. The 'new prompt version' rolled out 2026-08-04 cannot be evaluated from this export: the after-window overlaps both the demo-account spike (08-05) and the review-policy change (08-07), and 08-07 is a partial day. Before it's rolled out further, re-run this comparison on a window that excludes both confounds, or tag prompt-version directly in the export instead of relying on free-text notes.
+
+  3. Feedback clustering has the lowest acceptance rate of the three workflows (45%) despite the highest per-session time saved -- worth a qualitative look at a sample of rejected clusters before expanding it to more teams.
+
