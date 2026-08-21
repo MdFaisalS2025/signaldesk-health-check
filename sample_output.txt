@@ -1,5 +1,5 @@
 SignalDesk Weekly Health Check
-Source rows: 41  |  clean: 35  |  excluded: 5  |  ledger entries: 6
+Source rows: 41  |  clean: 35  |  partial-day (real, excluded from totals): 4  |  rejected (not real usage): 1  |  ledger entries: 6
 
 ========================================================================
 1) WHAT'S WORKING RIGHT NOW
@@ -15,7 +15,7 @@ what you optimize for:
   - highest acceptance:     Reply draft
   - fewest flags:           Lead summary
   - most total time saved:  Lead summary
-  - most time per session:  Feedback clustering (but lowest acceptance is Feedback clustering)
+  - most time per session:  Feedback clustering (also has the lowest acceptance rate)
 'thin days' counts contributing daily rows under 20 sessions, where a rate is noisy.
 Excludes every row quarantined in section 2.
 
@@ -24,7 +24,7 @@ Excludes every row quarantined in section 2.
 ========================================================================
 Quarantine ledger (6 entries):
   [DROP                ] 2026-08-05  Sales   Lead summary        email        - duplicate export row (same date/team/workflow/source)
-  [EXCLUDE FROM TOTALS ] 2026-08-05  Sales   Lead summary        email        - flagged as demo-account traffic, not real usage
+  [REJECT              ] 2026-08-05  Sales   Lead summary        email        - demo-account traffic, not real usage
   [EXCLUDE FROM TOTALS ] 2026-08-07  Sales   Lead summary        email        - partial export day (fewer series present than the modal 6/day)
   [EXCLUDE FROM TOTALS ] 2026-08-07  Support Reply draft         queue        - partial export day (fewer series present than the modal 6/day)
   [EXCLUDE FROM TOTALS ] 2026-08-07  Product Feedback clustering csv upload   - partial export day (fewer series present than the modal 6/day)
@@ -46,7 +46,7 @@ Divergence alarm (model confidence up, human signals down):
     shape  confidence .:-++*@   rating %@%@@@.   (2026-08-01 .. 2026-08-07)
 
 Metric trust check (evidence, not opinion):
-  median_confidence vs user_rating, all rows:  rho = +0.74  (n=38)
+  median_confidence vs user_rating, all rows:  rho = +0.72  (n=37)
   same pair, within Support/Reply draft/queue: rho = -0.02  (n=7)
   -> Confidence agrees with human judgment in steady state, then stops
      agreeing inside the series that broke, which is the one moment an

@@ -23,7 +23,7 @@ quietly dropped.
 `Support / Reply draft / queue`: confidence hit its weekly high on 08-07,
 the exact day acceptance, rating, and minutes-saved hit weekly lows and
 flags tripled. Dataset-wide, confidence tracks rating decently (Spearman
-around +0.74). Inside that series it flips to roughly 0 (n=7, small, say
+around +0.72). Inside that series it flips to roughly 0 (n=7, small, say
 it loosely): the metric agrees with people right until it stops
 mattering. It's a rule (confidence up, rating down, flag spike), not a
 note about one date, so it catches a repeat and stays quiet otherwise.

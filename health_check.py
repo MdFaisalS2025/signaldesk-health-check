@@ -127,8 +127,20 @@ def detect_incomplete_days(rows: list):
 
 
 def quarantine(rows: list):
-    """Partition rows into `clean` (safe to aggregate) and `flagged` (kept but
-    excluded from headline numbers), plus a ledger explaining every decision."""
+    """Partition rows three ways, because "don't trust this row" and "don't
+    sum this row into a cross-day total" are different claims:
+
+    - `clean`: safe to aggregate into headline totals.
+    - `flagged`: real usage, just excluded from totals because the day it
+      belongs to is a partial export (not comparable to a full day). Still
+      real data, so still usable for row-level analysis like correlation.
+    - `rejected`: not real usage at all (demo-account traffic). Excluded
+      from every analysis, not just totals.
+
+    A previous version lumped `flagged` and `rejected` together, which meant
+    the fabricated demo-traffic row was quietly included in the confidence
+    vs. rating trust correlation. Returns a ledger explaining every call.
+    """
     ledger = []
 
     deduped, dupes = dedupe_on_business_key(rows)
@@ -137,23 +149,19 @@ def quarantine(rows: list):
 
     incomplete_days, modal_n = detect_incomplete_days(deduped)
 
-    clean, flagged = [], []
+    clean, flagged, rejected = [], [], []
     for r in deduped:
-        reasons = []
         if "demo account" in r["notes"].lower():
-            reasons.append("flagged as demo-account traffic, not real usage")
-        if r["date"] in incomplete_days:
-            reasons.append(
-                f"partial export day (fewer series present than the modal {modal_n}/day)"
-            )
-        if reasons:
-            for reason in reasons:
-                ledger.append((r, "EXCLUDE FROM TOTALS", reason))
+            ledger.append((r, "REJECT", "demo-account traffic, not real usage"))
+            rejected.append(r)
+        elif r["date"] in incomplete_days:
+            ledger.append((r, "EXCLUDE FROM TOTALS",
+                            f"partial export day (fewer series present than the modal {modal_n}/day)"))
             flagged.append(r)
         else:
             clean.append(r)
 
-    return clean, flagged, ledger, incomplete_days
+    return clean, flagged, rejected, ledger, incomplete_days
 
 
 # --------------------------------------------------------------- stats ----
@@ -343,7 +351,11 @@ def section_working(clean: list):
     print(f"  - highest acceptance:     {best_accept}")
     print(f"  - fewest flags:           {fewest_flags}")
     print(f"  - most total time saved:  {most_time}")
-    print(f"  - most time per session:  {best_per_session} (but lowest acceptance is {worst_accept})")
+    if best_per_session == worst_accept:
+        print(f"  - most time per session:  {best_per_session} (also has the lowest acceptance rate)")
+    else:
+        print(f"  - most time per session:  {best_per_session} "
+              f"(lowest acceptance belongs to {worst_accept})")
     print("'thin days' counts contributing daily rows under "
           f"{MIN_DAILY_SESSIONS} sessions, where a rate is noisy.")
     print("Excludes every row quarantined in section 2.\n")
@@ -428,7 +440,7 @@ def section_metric_trust(clean, flagged, divergences):
           "     this is a reason to distrust the metric, not a measurement of it.\n")
 
 
-def section_next(clean, divergences, change_events, incomplete_days, flagged):
+def section_next(clean, divergences, change_events, incomplete_days, flagged, rejected):
     header("3) WHAT TO LOOK AT NEXT")
     items = []
 
@@ -443,10 +455,14 @@ def section_next(clean, divergences, change_events, incomplete_days, flagged):
             f"quality regression caused it, because this data cannot separate the two."
         )
 
-    # A claimed change is only evaluable if its after-window is clean. Skip a
-    # change whose own start date is the divergence just reported above,
-    # since that would just restate item 1 as a confound of itself.
-    dirty_dates = {r["date"] for r in flagged} | set(incomplete_days)
+    # A claimed change is only evaluable if its after-window is clean. A
+    # window is dirty if it contains a partial day, an incomplete day, or a
+    # rejected (fabricated) row. Skip a change whose own start date is the
+    # divergence just reported above, since that would just restate item 1
+    # as a confound of itself.
+    dirty_dates = ({r["date"] for r in flagged}
+                   | {r["date"] for r in rejected}
+                   | set(incomplete_days))
     for note, start in sorted(change_events.items(), key=lambda kv: kv[1]):
         if start in divergence_dates:
             continue
@@ -478,10 +494,12 @@ def section_next(clean, divergences, change_events, incomplete_days, flagged):
         print(f"  {i}. {item}\n")
 
 
-def print_intake(raw_n, clean, flagged, ledger):
+def print_intake(raw_n, clean, flagged, rejected, ledger):
     print("SignalDesk Weekly Health Check")
     print(f"Source rows: {raw_n}  |  clean: {len(clean)}  |  "
-          f"excluded: {len(flagged)}  |  ledger entries: {len(ledger)}")
+          f"partial-day (real, excluded from totals): {len(flagged)}  |  "
+          f"rejected (not real usage): {len(rejected)}  |  "
+          f"ledger entries: {len(ledger)}")
     print()
 
 
@@ -501,15 +519,19 @@ def main():
         print(f"'{path}' has a header but no data rows.", file=sys.stderr)
         return 2
 
-    clean, flagged, ledger, incomplete_days = quarantine(rows)
-    series = build_series(clean + flagged)
+    clean, flagged, rejected, ledger, incomplete_days = quarantine(rows)
+    # `rejected` (fabricated demo traffic) never enters any analysis, real or
+    # aggregate. `flagged` (real usage from a partial day) is excluded from
+    # totals but still a legitimate data point for row-level analysis.
+    real_rows = clean + flagged
+    series = build_series(real_rows)
     divergences = detect_divergences(series)
-    change_events = find_change_events(clean + flagged)
+    change_events = find_change_events(real_rows)
 
-    print_intake(len(rows), clean, flagged, ledger)
+    print_intake(len(rows), clean, flagged, rejected, ledger)
     section_working(clean)
     section_suspicious(clean, flagged, ledger, annotations, divergences)
-    section_next(clean, divergences, change_events, incomplete_days, flagged)
+    section_next(clean, divergences, change_events, incomplete_days, flagged, rejected)
     return 0
 
 

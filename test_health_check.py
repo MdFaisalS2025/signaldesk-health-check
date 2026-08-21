@@ -173,19 +173,32 @@ class TestEndToEnd(unittest.TestCase):
     def test_full_dataset_quarantine_counts(self):
         rows, _ = load_rows(DEFAULT_PATH)
         self.assertEqual(len(rows), 41)
-        clean, flagged, ledger, incomplete_days = quarantine(rows)
-        # 1 exact duplicate dropped, leaving 40; of those, 1 demo-spike row +
-        # 4 rows from the partial 08-07 day are excluded from totals = 5 flagged.
-        self.assertEqual(len(clean) + len(flagged), 40)
-        self.assertEqual(len(flagged), 5)
+        clean, flagged, rejected, ledger, incomplete_days = quarantine(rows)
+        # 1 exact duplicate dropped, leaving 40: 1 demo-spike row is rejected
+        # outright, 4 rows from the partial 08-07 day are flagged (real data,
+        # excluded from totals only).
+        self.assertEqual(len(clean) + len(flagged) + len(rejected), 40)
+        self.assertEqual(len(flagged), 4)
+        self.assertEqual(len(rejected), 1)
         self.assertEqual(len(ledger), 6)
         self.assertEqual(incomplete_days, {"2026-08-07"})
+
+    def test_rejected_rows_are_excluded_from_real_rows(self):
+        # The fabricated demo-traffic row must not influence the confidence
+        # vs. rating baseline: a previous version silently included it by
+        # lumping "fake" and "real but partial day" into one bucket.
+        rows, _ = load_rows(DEFAULT_PATH)
+        clean, flagged, rejected, _, _ = quarantine(rows)
+        self.assertEqual(len(rejected), 1)
+        self.assertIn("demo account", rejected[0]["notes"].lower())
+        real_rows = clean + flagged
+        self.assertNotIn(rejected[0], real_rows)
 
     def test_real_dataset_still_trips_the_known_incident(self):
         # Confirms the general rule actually catches the specific incident
         # this submission leads with, using the real CSV end to end.
         rows, _ = load_rows(DEFAULT_PATH)
-        clean, flagged, _, _ = quarantine(rows)
+        clean, flagged, rejected, _, _ = quarantine(rows)
         series = build_series(clean + flagged)
         findings = detect_divergences(series)
         self.assertEqual(len(findings), 1)
